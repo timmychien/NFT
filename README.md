@@ -1,5 +1,5 @@
 ## NFT
-#Paying Method:
+Paying Method:
 
 1.Buy Now(Ether)
 
