@@ -1,5 +1,5 @@
-# NFT
-Paying Method:
+## NFT
+#Paying Method:
 
 1.Buy Now(Ether)
 
@@ -7,7 +7,7 @@ Paying Method:
 
 3.Make Offer(Ether)
 
-Procedure:
+#Procedure:
 
 (1)Buy Now:Seller sign a signature,Buy get the signature and call exchange to finish transaction
 
