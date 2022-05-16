@@ -887,10 +887,10 @@ contract ExchangeV1 is Ownable, ExchangeDomainV1 {
 
     enum FeeSide {NONE, SELL, BUY}
     //for ether deposit
-    event Deposit(uint tokenId, address payer,uint wad);
-    event ERC20Deposit(address erc20Address,uint tokenId, address payer,uint wad );
-    event Withdraw(uint tokenId, address payer,uint wad);
-    event WithdrawERC20(address erc20Address,uint tokenId, address payer,uint wad);
+    event Deposit(address tokenAddress,uint tokenId, address payer,uint wad);
+    event ERC20Deposit(address erc20Address,address tokenAddress,uint tokenId, address payer,uint wad );
+    event Withdraw(address tokenAddress,uint tokenId, address payer,uint wad);
+    event WithdrawERC20(address erc20Address,address tokenAddress,uint tokenId, address payer,uint wad);
     event Approval(address indexed src, address indexed guy, uint wad);
     //for nft  Deposit
     //event nftDeposit(address indexed src,address indexed owner,uint nftId);
@@ -912,8 +912,8 @@ contract ExchangeV1 is Ownable, ExchangeDomainV1 {
         uint256 salt
     );
     mapping (address => mapping (address => uint)) public  allowance;
-    mapping (uint=>mapping(address => uint)) public balanceOf;
-    mapping (address=>mapping(uint=>mapping(address=>uint)))public balanceOfERC20;
+    mapping (address => mapping(uint => mapping(address => uint))) public balanceOf;
+    mapping (address => mapping(address => mapping(uint => mapping(address => uint))))public balanceOfERC20;
     //mapping (uint=>mapping(address => uint))public orderIdList;
     //mapping (uint=>Order)orderList;
     bytes4 private constant _INTERFACE_ID_FEES = 0xb7799584;
@@ -1129,97 +1129,101 @@ contract ExchangeV1 is Ownable, ExchangeDomainV1 {
     }
     //buyer deposit ether into contract and record the balance on contract
     
-    function getNowIdBalance(uint tokenId)public view returns(uint){
-        return balanceOf[tokenId][msg.sender];
+    function getNowIdBalance(address tokenAddress,uint tokenId)public view returns(uint){
+        return balanceOf[tokenAddress][tokenId][msg.sender];
     }
-    function getNowERC20Balance(address erc20Addr,uint tokenId)public view returns(uint){
-        return balanceOfERC20[erc20Addr][tokenId][msg.sender];
+    function getNowERC20Balance(address erc20Addr,address tokenAddress,uint tokenId)public view returns(uint){
+        return balanceOfERC20[erc20Addr][tokenAddress][tokenId][msg.sender];
     }
-    function deposit(uint tokenId)external payable{
+    function deposit(address tokenAddress,uint tokenId)external payable{
         uint _amount=msg.value;
-        balanceOf[tokenId][msg.sender]+=_amount;
-        emit Deposit(tokenId,msg.sender,_amount);
+        balanceOf[tokenAddress][tokenId][msg.sender]+=_amount;
+        emit Deposit(tokenAddress,tokenId,msg.sender,_amount);
     }
-    function depositERC20(uint tokenId,address erc20Addr,uint amount)external{
+    function depositERC20(address erc20Addr,address tokenAddress,uint tokenId,uint amount)external{
         IERC20(erc20Addr).transferFrom(msg.sender,address(this),amount);
-        balanceOfERC20[erc20Addr][tokenId][msg.sender]=amount;
-        emit ERC20Deposit(erc20Addr,tokenId,msg.sender,amount);
+        balanceOfERC20[erc20Addr][tokenAddress][tokenId][msg.sender]+=amount;
+        emit ERC20Deposit(erc20Addr,tokenAddress,tokenId,msg.sender,amount);
     }
-    function transferOrder(Order calldata order,uint newTokenId)external{
+    function transferOrder(Order calldata order,address newToken,uint newTokenId)external{
         IERC721 nft=IERC721(order.key.buyAsset.token);
         require(order.expireTime<now,"the order has not be expired yet");
         require(nft.getApproved(order.key.buyAsset.tokenId)!=address(this),"you can't transfer fund now");
-        uint balanceToTransfer=balanceOf[order.key.buyAsset.tokenId][msg.sender];
-        balanceOf[newTokenId][msg.sender]=balanceToTransfer;
-        delete balanceOf[order.key.buyAsset.tokenId][msg.sender];
+        uint balanceToTransfer=balanceOf[order.key.buyAsset.token][order.key.buyAsset.tokenId][order.key.owner];
+        balanceOf[newToken][newTokenId][order.key.owner]=balanceToTransfer;
+        balanceOf[order.key.buyAsset.token][order.key.buyAsset.tokenId][order.key.owner]-=order.selling;
     }
-    function transferERC20Order(Order calldata order,uint newTokenId)external{
+    function transferERC20Order(Order calldata order,address newToken,uint newTokenId)external{
         IERC721 nft=IERC721(order.key.buyAsset.token);
         address erc20Address=order.key.sellAsset.token;
         require(order.expireTime<now,"the order has not be expired yet");
         require(nft.getApproved(order.key.buyAsset.tokenId)!=address(this),"you can't transfer fund now");
-        uint balanceToTransfer=balanceOfERC20[erc20Address][order.key.buyAsset.tokenId][msg.sender];
-        balanceOfERC20[erc20Address][newTokenId][msg.sender]=balanceToTransfer;
-        delete balanceOfERC20[erc20Address][order.key.buyAsset.tokenId][msg.sender];
+        uint balanceToTransfer=balanceOfERC20[erc20Address][order.key.buyAsset.token][order.key.buyAsset.tokenId][order.key.owner];
+        balanceOfERC20[erc20Address][newToken][newTokenId][order.key.owner]=balanceToTransfer;
+        balanceOfERC20[erc20Address][order.key.buyAsset.token][order.key.buyAsset.tokenId][order.key.owner]-=order.selling;
     }
     function withdraw(Order calldata order,address payable to)external {
         IERC721 nft=IERC721(order.key.buyAsset.token);
         require(order.expireTime<now,"the order has not be expired yet");
         require(nft.getApproved(order.key.buyAsset.tokenId)!=address(this),"you can't withdraw fund now");
-        uint withdrawBalance=balanceOf[order.key.buyAsset.tokenId][msg.sender];
-        to.transfer(withdrawBalance);
-        delete balanceOf[order.key.buyAsset.tokenId][msg.sender];
-        emit Withdraw(order.key.buyAsset.tokenId,msg.sender,withdrawBalance);
+        //uint withdrawBalance=balanceOf[order.key.buyAsset.token][order.key.buyAsset.tokenId][order.key.owner];
+        to.transfer(order.selling);
+        balanceOf[order.key.buyAsset.token][order.key.buyAsset.tokenId][order.key.owner]-=order.selling;
+        emit Withdraw(order.key.buyAsset.token,order.key.buyAsset.tokenId,order.key.owner,order.selling);
     }
     function withdrawERC20(Order calldata order,address payable to)external{
         IERC721 nft=IERC721(order.key.buyAsset.token);
         address erc20Address=order.key.sellAsset.token;
         require(order.expireTime<now,"the order has not be expired yet");
         require(nft.getApproved(order.key.buyAsset.tokenId)!=address(this),"you can't withdraw fund now");
-        uint withdrawERC20Balance=balanceOfERC20[erc20Address][order.key.buyAsset.tokenId][msg.sender];
-        IERC20(erc20Address).transfer(to,withdrawERC20Balance);
-        delete balanceOfERC20[erc20Address][order.key.buyAsset.tokenId][msg.sender];
-        emit WithdrawERC20(erc20Address,order.key.buyAsset.tokenId,msg.sender,withdrawERC20Balance);
+        //uint withdrawERC20Balance=balanceOfERC20[erc20Address][order.key.buyAsset.token][order.key.buyAsset.tokenId][order.key.owner];
+        IERC20(erc20Address).transfer(to,order.selling);
+        balanceOfERC20[erc20Address][order.key.buyAsset.token][order.key.buyAsset.tokenId][order.key.owner]-=order.selling;
+        emit WithdrawERC20(erc20Address,order.key.buyAsset.token,order.key.buyAsset.tokenId,order.key.owner,order.selling);
     }
     //seller call change function to finish the transaction
     function change(Order calldata order,Sig calldata sig,address payable nftseller)external{
-        require(balanceOf[order.key.buyAsset.tokenId][order.key.owner]>=order.selling);
+        require(balanceOf[order.key.buyAsset.token][order.key.buyAsset.tokenId][order.key.owner]>=order.selling);
         require(order.expireTime>now,"this order has been expired");
         validateOrderSig(order, sig);
         nftseller.transfer(order.selling);
         transfer(order.key.buyAsset, order.buying,nftseller,order.key.owner);
-        delete balanceOf[order.key.buyAsset.tokenId][msg.sender];
+        //delete balanceOf[order.key.buyAsset.tokenId][msg.sender];
+        balanceOf[order.key.buyAsset.token][order.key.buyAsset.tokenId][order.key.owner]-=order.selling;
         emit DoChange(nftseller,order.key.owner,order.selling,order.buying);
     }
     function changeWithFee(Order calldata order,Sig calldata sig,address payable nftseller,uint fee)external{
-        require(balanceOf[order.key.buyAsset.tokenId][order.key.owner]>=order.selling);
+        require(balanceOf[order.key.buyAsset.token][order.key.buyAsset.tokenId][order.key.owner]>=order.selling);
         require(order.expireTime>now,"this order has been expired");
         validateOrderSig(order, sig);
         nftseller.transfer(order.selling-fee);
         beneficiary.transfer(fee);
         transfer(order.key.buyAsset, order.buying,nftseller,order.key.owner);
-        delete balanceOf[order.key.buyAsset.tokenId][msg.sender];
+        //delete balanceOf[order.key.buyAsset.tokenId][msg.sender];
+        balanceOf[order.key.buyAsset.token][order.key.buyAsset.tokenId][order.key.owner]-=order.selling;
         emit DoChange(nftseller,order.key.owner,order.selling,order.buying);
     }
     function ERC20Change(Order calldata order,Sig calldata sig,address payable nftseller)external{
         address erc20Address=order.key.sellAsset.token;
-        require(balanceOfERC20[erc20Address][order.key.buyAsset.tokenId][order.key.owner]>=order.selling);
+        require(balanceOfERC20[erc20Address][order.key.buyAsset.token][order.key.buyAsset.tokenId][order.key.owner]>=order.selling);
         require(order.expireTime>now,"this order has been expired");
         validateOrderSig(order, sig);
         IERC20(erc20Address).transfer(nftseller,order.selling);
         transfer(order.key.buyAsset, order.buying,nftseller,order.key.owner);
-        delete balanceOfERC20[erc20Address][order.key.buyAsset.tokenId][msg.sender];
+        //delete balanceOfERC20[erc20Address][order.key.buyAsset.tokenId][msg.sender];
+        balanceOfERC20[erc20Address][order.key.buyAsset.token][order.key.buyAsset.tokenId][order.key.owner]-=order.selling;
         emit DoERC20Change(erc20Address,nftseller,order.key.owner,order.selling,order.buying);
     }
     function ERC20ChangeWithFee(Order calldata order,Sig calldata sig,address payable nftseller,uint fee)external{
         address erc20Address=order.key.sellAsset.token;
-        require(balanceOfERC20[erc20Address][order.key.buyAsset.tokenId][order.key.owner]>=order.selling);
+        require(balanceOfERC20[erc20Address][order.key.buyAsset.token][order.key.buyAsset.tokenId][order.key.owner]>=order.selling);
         require(order.expireTime>now,"this order has been expired");
         validateOrderSig(order, sig);
         IERC20(erc20Address).transfer(nftseller,order.selling-fee);
         IERC20(erc20Address).transfer(beneficiary,fee);
         transfer(order.key.buyAsset, order.buying,nftseller,order.key.owner);
-        delete balanceOfERC20[erc20Address][order.key.buyAsset.tokenId][msg.sender];
+        //delete balanceOfERC20[erc20Address][order.key.buyAsset.tokenId][msg.sender];
+        balanceOfERC20[erc20Address][order.key.buyAsset.token][order.key.buyAsset.tokenId][order.key.owner]-=order.selling;
         emit DoERC20Change(erc20Address,nftseller,order.key.owner,order.selling,order.buying);
     }
 }
